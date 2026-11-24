@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pengaman Mobil GPS</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#2b3340;--ink:#e8edf3;--mute:#93a1b3;--ok:#2ecc71;--warn:#f5b800;--bad:#ff3b30;--acc:#3ea6ff}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif;overflow-x:clip}
+h1,h2,.num{font-family:"Space Grotesk",Inter,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px max(4vw,14px);border-bottom:1px solid var(--line)}
+h1{font-size:22px;margin:0}
+.wrap{padding:14px max(4vw,14px);display:grid;gap:14px;max-width:1240px;margin:auto}
+.top{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px}
+@media(max-width:760px){.top{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+h2{font-size:17px;margin:0 0 10px}
+.speed{text-align:center;transition:background .3s}
+.speed.over{background:#3a0f0d;border-color:var(--bad)}
+.speed .num{font-size:clamp(84px,22vw,150px);line-height:1;font-weight:700}
+.speed .unit{color:var(--mute)}
+.limit{display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:50%;border:6px solid var(--bad);background:#fff;color:#111;font:700 24px "Space Grotesk";margin-top:8px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
+.stats div{background:#0f141b;border-radius:10px;padding:8px}
+.stats b{display:block;font:700 19px "Space Grotesk";white-space:nowrap}
+.stats span{font-size:13px;color:var(--mute)}
+@media(max-width:420px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.alert{margin-top:12px;padding:10px;border-radius:10px;font-weight:600;background:#0f141b}
+.alert.bad{background:var(--bad);color:#fff}.alert.warn{background:var(--warn);color:#111}
+.radar svg{width:100%;height:auto;max-height:340px;display:block}
+.zones{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-size:13px;text-align:center}
+.zones b{display:block;font:700 18px "Space Grotesk";white-space:nowrap}
+#map{height:360px;border-radius:12px}
+.maps{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media(max-width:760px){.maps{grid-template-columns:minmax(0,1fr)}}
+iframe{width:100%;height:360px;border:0;border-radius:12px;background:#0f141b}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,select,input{font:inherit;font-size:16px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#0f141b;color:var(--ink);padding:0 14px}
+button{cursor:pointer;font-weight:600}
+button.pri{background:var(--acc);border-color:var(--acc);color:#04121f}
+button.on{background:var(--ok);border-color:var(--ok);color:#04140a}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+a{color:var(--acc)}
+label{font-size:14px;color:var(--mute);display:grid;gap:4px}
+.set{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.scroll{overflow-x:auto;max-height:260px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.small{font-size:13px;color:var(--mute)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--mute);margin-right:6px}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pengaman Mobil GPS</h1>
+  <div class="row">
+    <button id="bGps" class="pri">Mulai GPS</button>
+    <button id="bSim">Mode Simulasi</button>
+    <button id="bBle">Hubungkan Sensor (ESP32)</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="small" id="status"><span class="dot" id="gDot"></span><span id="gTxt">GPS belum aktif</span> · <span class="dot" id="sDot"></span><span id="sTxt">Sensor jarak belum terhubung</span></div>
+
+  <div class="top">
+    <section class="card speed" id="speedCard">
+      <div class="num" id="spd">0</div>
+      <div class="unit">km/jam</div>
+      <div class="limit" id="limBadge">60</div>
+      <div class="stats">
+        <div><b id="sMax">0</b><span>Maks (km/j)</span></div>
+        <div><b id="sAvg">0</b><span>Rata-rata</span></div>
+        <div><b id="sDist">0,00</b><span>Jarak (km)</span></div>
+        <div><b id="sTime">00:00</b><span>Durasi</span></div>
+      </div>
+      <div class="alert" id="alert">Siap. Tekan "Mulai GPS" atau "Mode Simulasi".</div>
+    </section>
+
+    <section class="card radar">
+      <h2>Radar jarak sekitar mobil</h2>
+      <svg viewBox="0 0 300 300" aria-label="Radar jarak">
+        <defs><radialGradient id="g"><stop offset="0" stop-color="#1e2a38"/><stop offset="1" stop-color="#0f141b"/></radialGradient></defs>
+        <circle cx="150" cy="150" r="140" fill="url(#g)" stroke="#2b3340"/>
+        <circle cx="150" cy="150" r="95" fill="none" stroke="#2b3340" stroke-dasharray="4 6"/>
+        <path id="zF" d="M95 72 Q150 20 205 72 L185 92 Q150 62 115 92Z" fill="#2b3340"/>
+        <path id="zB" d="M95 228 Q150 280 205 228 L185 208 Q150 238 115 208Z" fill="#2b3340"/>
+        <path id="zL" d="M72 95 Q30 150 72 205 L92 185 Q72 150 92 115Z" fill="#2b3340"/>
+        <path id="zR" d="M228 95 Q270 150 228 205 L208 185 Q228 150 208 115Z" fill="#2b3340"/>
+        <rect x="122" y="100" width="56" height="100" rx="18" fill="#3ea6ff"/>
+        <rect x="130" y="114" width="40" height="22" rx="6" fill="#0d1117" opacity=".7"/>
+        <rect x="130" y="168" width="40" height="18" rx="6" fill="#0d1117" opacity=".7"/>
+      </svg>
+      <div class="zones">
+        <div>Depan<b id="dF">–</b></div><div>Belakang<b id="dB">–</b></div>
+        <div>Kiri<b id="dL">–</b></div><div>Kanan<b id="dR">–</b></div>
+      </div>
+      <p class="small">Depan memakai aturan jarak aman 2 detik sesuai kecepatan. Sisi dan belakang memakai batas di Pengaturan.</p>
+    </section>
+  </div>
+
+  <div class="maps">
+    <section class="card">
+      <h2>Lacak posisi (jejak perjalanan)</h2>
+      <div id="map"></div>
+      <p class="small" id="coord">Posisi: –</p>
+    </section>
+    <section class="card">
+      <h2>Google Maps</h2>
+      <iframe id="gmap" title="Google Maps" loading="lazy"></iframe>
+      <div class="row" style="margin-top:8px">
+        <a id="gOpen" href="#" target="_blank" rel="noopener">Buka di Google Maps</a> ·
+        <button id="bShare">Salin link lokasi</button>
+      </div>
+      <p class="small">Peta Google diperbarui tiap 15 detik agar hemat kuota.</p>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Pengaturan</h2>
+    <div class="set">
+      <label>Jenis jalan / batas kecepatan
+        <select id="preset">
+          <option value="30">Perumahan / sekolah – 30</option>
+          <option value="50">Jalan kota – 50</option>
+          <option value="60" selected>Jalan umum – 60</option>
+          <option value="80">Jalan antarkota – 80</option>
+          <option value="100">Jalan tol – 100</option>
+        </select></label>
+      <label>Batas manual (km/jam)<input id="limit" type="number" min="10" max="160" value="60"></label>
+      <label>Sisi/belakang waspada (cm)<input id="tWarn" type="number" value="150"></label>
+      <label>Sisi/belakang bahaya (cm)<input id="tBad" type="number" value="60"></label>
+      <label>Rem mendadak (turun km/j per detik)<input id="tBrake" type="number" value="12"></label>
+      <label>Suara peringatan
+        <select id="voice"><option value="1">Bunyi + suara</option><option value="2">Bunyi saja</option><option value="0">Mati</option></select></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between"><h2>Catatan kejadian</h2>
+      <div class="row"><button id="bCsv">Unduh CSV</button><button id="bClr">Kosongkan</button></div></div>
+    <div class="scroll"><table><thead><tr><th>Waktu</th><th>Kejadian</th><th>Kecepatan</th><th>Lokasi</th></tr></thead><tbody id="log"></tbody></table></div>
+    <p class="small" id="empty">Belum ada kejadian.</p>
+  </section>
+  <p class="small">Aplikasi pendamping. Tetap fokus ke jalan, pasang HP di holder, jangan dioperasikan sambil menyetir. · Team Hensen</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+{
+const $=id=>document.getElementById(id);
+const S={on:false,sim:false,watch:null,last:null,maxV:0,dist:0,t0:null,v:0,prevV:0,prevT:0,lat:null,lng:null,track:[],log:[],dist4:{F:null,B:null,L:null,R:null},lastAlert:{},overSince:0};
+const fmt=n=>n.toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let map=null,marker=null,line=null;
+function initMap(){
+  if(map||!window.L)return;
+  map=L.map('map').setView([-6.9147,107.6098],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  line=L.polyline([],{color:'#3ea6ff',weight:5}).addTo(map);
+  marker=L.circleMarker([-6.9147,107.6098],{radius:9,color:'#fff',fillColor:'#3ea6ff',fillOpacity:1}).addTo(map);
+}
+initMap();
+let lastG=0;
+function updateGmap(force){
+  if(S.lat==null)return;
+  const q=S.lat.toFixed(6)+','+S.lng.toFixed(6);
+  $('gOpen').href='https://www.google.com/maps/search/?api=1&query='+q;
+  if(force||Date.now()-lastG>15000){lastG=Date.now();$('gmap').src='https://maps.google.com/maps?q='+q+'&z=16&output=embed';}
+}
+
+let ac=null;
+function beep(f,ms){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;o.connect(g);g.connect(ac.destination);g.gain.value=.25;o.start();o.stop(ac.currentTime+ms/1000);}catch(e){}}
+function say(t){if($('voice').value!=='1')return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='id-ID';speechSynthesis.speak(u);}catch(e){}}
+function warn(key,text,level,gap){
+  const now=Date.now();if(now-(S.lastAlert[key]||0)<(gap||8000))return;S.lastAlert[key]=now;
+  if($('voice').value!=='0')beep(level==='bad'?1100:750,level==='bad'?400:200);
+  say(text);addLog(text);
+}
+function setAlert(text,cls){const a=$('alert');a.textContent=text;a.className='alert '+(cls||'');}
+
+function loadLog(){try{S.log=JSON.parse(localStorage.getItem('pm_log')||'[]')}catch(e){S.log=[]}}
+function saveLog(){try{localStorage.setItem('pm_log',JSON.stringify(S.log.slice(-500)))}catch(e){}}
+function addLog(ev){S.log.push({t:new Date().toLocaleString('id-ID'),ev,v:Math.round(S.v),loc:S.lat==null?'-':S.lat.toFixed(5)+','+S.lng.toFixed(5)});saveLog();renderLog();}
+function renderLog(){
+  $('log').innerHTML=S.log.slice().reverse().map(r=>`<tr><td>${esc(r.t)}</td><td>${esc(r.ev)}</td><td>${esc(r.v)} km/j</td><td>${r.loc==='-'?'-':`<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${esc(r.loc)}">${esc(r.loc)}</a>`}</td></tr>`).join('');
+  $('empty').style.display=S.log.length?'none':'block';
+}
+loadLog();renderLog();
+
+const limit=()=>+$('limit').value||60;
+$('preset').onchange=()=>{$('limit').value=$('preset').value;$('limBadge').textContent=$('preset').value;};
+$('limit').oninput=()=>{$('limBadge').textContent=limit();};
+function hav(a,b,c,d){const R=6371000,r=Math.PI/180,x=(c-a)*r,y=(d-b)*r,h=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+
+function onPos(lat,lng,speedMs,acc,t){
+  if(!S.t0)S.t0=t;
+  let v=null;
+  if(S.last){
+    const d=hav(S.last.lat,S.last.lng,lat,lng),dt=(t-S.last.t)/1000;
+    if(d>(acc?Math.min(acc,15):3))S.dist+=d;
+    if(speedMs==null&&dt>0)v=d/dt*3.6;
+  }
+  if(speedMs!=null&&speedMs>=0)v=speedMs*3.6;
+  if(v==null)v=0;
+  if(v<2)v=0;
+  if(S.prevT){const dt=(t-S.prevT)/1000;if(dt>0&&dt<4&&(S.prevV-v)/dt>(+$('tBrake').value||12)&&S.prevV>20)warn('brake','Rem mendadak terdeteksi','warn',5000);}
+  S.prevV=v;S.prevT=t;S.v=v;S.last={lat,lng,t};S.lat=lat;S.lng=lng;
+  S.maxV=Math.max(S.maxV,v);
+  S.track.push([lat,lng]);if(S.track.length>5000)S.track.shift();
+  if(map){marker.setLatLng([lat,lng]);line.setLatLngs(S.track);map.panTo([lat,lng],{animate:false});}
+  $('coord').textContent='Posisi: '+lat.toFixed(6)+', '+lng.toFixed(6)+(acc?' · akurasi ±'+Math.round(acc)+' m':'');
+  updateGmap(S.track.length===1);
+  render();
+}
+function render(){
+  const v=S.v,lim=limit();
+  $('spd').textContent=Math.round(v);
+  $('sMax').textContent=Math.round(S.maxV);
+  const sec=S.t0?(Date.now()-S.t0)/1000:0;
+  $('sAvg').textContent=sec>0?Math.round(S.dist/1000/(sec/3600)):0;
+  $('sDist').textContent=fmt(S.dist/1000);
+  const m=Math.floor(sec/60);$('sTime').textContent=String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+  const over=v>lim;
+  $('speedCard').classList.toggle('over',over);
+  if(over){
+    setAlert('Terlalu cepat! Batas '+lim+' km/jam','bad');
+    if(!S.overSince)S.overSince=Date.now();
+    warn('over','Kurangi kecepatan. Batas '+lim+' kilometer per jam','bad',10000);
+  }else{
+    S.overSince=0;
+    if(v>lim*0.9)setAlert('Mendekati batas kecepatan','warn');
+    else if(!proxAlertActive)setAlert('Aman. Kecepatan normal.','');
+  }
+  renderProx();
+}
+
+let proxAlertActive=false;
+const names={F:'depan',B:'belakang',L:'kiri',R:'kanan'};
+function zoneLevel(k,cm){
+  if(cm==null)return '';
+  if(k==='F'){
+    const ms=S.v/3.6,safe2=Math.max(2,ms*2)*100,safe1=Math.max(1,ms*1)*100;
+    return cm<safe1?'bad':cm<safe2?'warn':'ok';
+  }
+  return cm<(+$('tBad').value||60)?'bad':cm<(+$('tWarn').value||150)?'warn':'ok';
+}
+function showCm(cm){return cm==null?'–':cm>=100?fmt(cm/100)+' m':Math.round(cm)+' cm';}
+function renderProx(){
+  const col={ok:'#2ecc71',warn:'#f5b800',bad:'#ff3b30','':'#2b3340'};
+  proxAlertActive=false;
+  for(const k of ['F','B','L','R']){
+    const cm=S.dist4[k],lv=zoneLevel(k,cm);
+    $('z'+k).setAttribute('fill',col[lv]);
+    $('d'+k).textContent=showCm(cm);
+    if(lv==='bad'){
+      proxAlertActive=true;
+      if(S.v<=limit())setAlert('BAHAYA: kendaraan/objek terlalu dekat di '+names[k],'bad');
+      warn('p'+k,'Awas, terlalu dekat di '+names[k],'bad',5000);
+    }
+  }
+}
+function onSensor(txt){
+  String(txt).split(/[;,\n]/).forEach(p=>{const m=p.trim().match(/^([FBLR])\s*[=:]\s*(-?\d+(\.\d+)?)/i);if(m){const v=+m[2];S.dist4[m[1].toUpperCase()]=v>0?v:null;}});
+  renderProx();
+}
+
+let wake=null;
+async function keepAwake(){try{wake=await navigator.wakeLock.request('screen')}catch(e){}}
+$('bGps').onclick=()=>{
+  if(S.on){stopAll();return;}
+  if(!('geolocation' in navigator)){setAlert('HP/browser ini tidak mendukung GPS.','bad');return;}
+  if(!window.isSecureContext){$('gDot').className='dot bad';$('gTxt').textContent='GPS diblokir: buka aplikasi dari alamat https://, bukan dari File/Drive';setAlert('Alamat halaman tidak aman ('+location.protocol+'). Upload ke hosting https (mis. GitHub Pages) lalu buka dari sana.','bad');return;}
+  stopAll();reset();
+  $('gTxt').textContent='Meminta izin lokasi…';
+  S.watch=navigator.geolocation.watchPosition(p=>{
+    $('gDot').className='dot ok';$('gTxt').textContent='GPS aktif';
+    onPos(p.coords.latitude,p.coords.longitude,p.coords.speed,p.coords.accuracy,p.timestamp||Date.now());
+  },e=>{$('gDot').className='dot bad';$('gTxt').textContent='GPS gagal: '+(e.code===1?'izin lokasi ditolak':e.message);},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+  S.on=true;$('bGps').textContent='Stop GPS';$('bGps').classList.add('on');keepAwake();addLog('Perjalanan dimulai');
+};
+function reset(){S.last=null;S.maxV=0;S.dist=0;S.t0=null;S.v=0;S.prevV=0;S.prevT=0;S.track=[];S.overSince=0;}
+function stopAll(){
+  if(S.watch!=null)navigator.geolocation.clearWatch(S.watch);S.watch=null;
+  if(simT)clearInterval(simT);simT=null;
+  if(S.on||S.sim)addLog('Perjalanan selesai · '+fmt(S.dist/1000)+' km');
+  S.on=false;S.sim=false;
+  $('bGps').textContent='Mulai GPS';$('bGps').classList.remove('on');
+  $('bSim').textContent='Mode Simulasi';$('bSim').classList.remove('on');
+  $('gDot').className='dot';$('gTxt').textContent='GPS tidak aktif';
+  try{wake&&wake.release()}catch(e){}
+}
+
+let simT=null;
+$('bSim').onclick=()=>{
+  if(S.sim){stopAll();return;}
+  stopAll();reset();S.sim=true;$('bSim').textContent='Stop Simulasi';$('bSim').classList.add('on');
+  $('gDot').className='dot warn';$('gTxt').textContent='Mode simulasi (data contoh, rute Bandung)';
+  let lat=-6.9147,lng=107.6098,hd=0.6,step=0,t=Date.now();
+  addLog('Simulasi dimulai');
+  simT=setInterval(()=>{
+    step++;
+    const target=step<20?40+step*2:step<40?85:step<46?30:55;
+    const v=target+(Math.random()*4-2);
+    hd+=Math.sin(step/9)*0.08;
+    const d=v/3.6;
+    lat+=d*Math.cos(hd)/111320;lng+=d*Math.sin(hd)/(111320*Math.cos(lat*Math.PI/180));
+    t+=1000;onPos(lat,lng,v/3.6,8,t);
+    if(!bleDev){const ph=step%30;onSensor('F='+(ph<20?900-ph*35:300)+';B='+(ph>22?45:250)+';L='+(ph>10&&ph<14?55:180)+';R=220');}
+    if(step>70)step=0;
+  },1000);
+};
+
+const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e',TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+let bleDev=null;
+$('bBle').onclick=async()=>{
+  if(!window.isSecureContext){$('sDot').className='dot bad';$('sTxt').textContent='Bluetooth diblokir: buka aplikasi dari alamat https://';return;}
+  if(!navigator.bluetooth){$('sDot').className='dot bad';$('sTxt').textContent='Bluetooth web tidak didukung. Pakai Chrome di Android.';return;}
+  try{
+    $('sTxt').textContent='Mencari ESP32…';
+    bleDev=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]}],optionalServices:[SVC]});
+    bleDev.addEventListener('gattserverdisconnected',()=>{$('sDot').className='dot bad';$('sTxt').textContent='Sensor terputus';bleDev=null;warn('ble','Sensor jarak terputus','warn',3000);});
+    const srv=await bleDev.gatt.connect(),svc=await srv.getPrimaryService(SVC),ch=await svc.getCharacteristic(TX);
+    const dec=new TextDecoder();
+    ch.addEventListener('characteristicvaluechanged',e=>onSensor(dec.decode(e.target.value)));
+    await ch.startNotifications();
+    $('sDot').className='dot ok';$('sTxt').textContent='Sensor terhubung: '+(bleDev.name||'ESP32');addLog('Sensor jarak terhubung');
+  }catch(e){$('sDot').className='dot bad';$('sTxt').textContent='Gagal terhubung: '+e.message;bleDev=null;}
+};
+
+$('bShare').onclick=async()=>{
+  if(S.lat==null){setAlert('Posisi belum ada.','warn');return;}
+  const u='https://www.google.com/maps/search/?api=1&query='+S.lat.toFixed(6)+','+S.lng.toFixed(6);
+  try{await navigator.clipboard.writeText(u);$('bShare').textContent='Tersalin ✓';}catch(e){$('bShare').textContent='Gagal menyalin';}
+  setTimeout(()=>$('bShare').textContent='Salin link lokasi',2000);
+};
+$('bCsv').onclick=()=>{
+  const rows=[['Waktu','Kejadian','Kecepatan (km/j)','Lokasi']].concat(S.log.map(r=>[r.t,r.ev,r.v,r.loc]));
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='log_pengaman_mobil.csv';a.click();
+};
+$('bClr').onclick=()=>{S.log=[];saveLog();renderLog();};
+setInterval(()=>{if(S.on||S.sim)render();},5000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&(S.on||S.sim))keepAwake();});
+}
+</script>
+</body>
+  </html>
